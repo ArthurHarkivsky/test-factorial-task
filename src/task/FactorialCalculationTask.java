@@ -40,7 +40,7 @@ public class FactorialCalculationTask implements Runnable {
                             context.taskCount().decrementAndGet();
                             activeCalculations.decrementAndGet();
                             // To maintain the rate limit
-//                            Thread.sleep(1000);
+                            Thread.sleep(1000);
                             rateLimiter.release();
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
