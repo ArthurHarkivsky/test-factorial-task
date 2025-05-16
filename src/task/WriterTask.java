@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 public class WriterTask implements Runnable {
+    private static final int POLLING_INTERVAL_MS = 50;
+    private static final int LOG_INTERVAL = 100; // Log every 100 polls
     private final CalculationContext context;
 
     public WriterTask(CalculationContext context) {
@@ -19,10 +21,10 @@ public class WriterTask implements Runnable {
     public void run() {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(context.configuration().output()))) {
             boolean isCompleted = false;
+            int pollCount = 0;
 
             while (!isCompleted || resultQueuesAreNotEmpty()) {
-
-                ResultItem result = context.resultQueue().poll(100, TimeUnit.MILLISECONDS);
+                ResultItem result = context.resultQueue().poll(POLLING_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
                 if (result != null) {
                     context.orderedResults().put(result.index(), result);
@@ -31,10 +33,15 @@ public class WriterTask implements Runnable {
                 writeOrderedResults(writer);
 
                 if (!isCompleted) {
-                    isCompleted = context.taskComplete().await(10, TimeUnit.MILLISECONDS);
+                    isCompleted = context.taskComplete().await(POLLING_INTERVAL_MS, TimeUnit.MILLISECONDS);
                 }
-                System.out.println("Result queue size: " + context.resultQueue().size());
+
+                pollCount = logPeriodically(pollCount);
             }
+
+            // Final writing pass to ensure nothing was missed
+            writeOrderedResults(writer);
+
             System.out.println("All results written to " + context.configuration().output());
         } catch (IOException | InterruptedException e) {
             System.err.println("Error in writer thread: " + e.getMessage());
@@ -47,18 +54,29 @@ public class WriterTask implements Runnable {
     }
 
     private void writeOrderedResults(BufferedWriter writer) throws IOException {
+        int currentIndex = context.nextIndexToWrite().get();
         ResultItem nextResult;
-        while ((nextResult = getNextAndRemoveFromQueue()) != null) {
-            // format: "number = factorial"
+
+        while ((nextResult = context.orderedResults().get(currentIndex)) != null) {
             writer.write(nextResult.number() + " = " + nextResult.result());
             writer.newLine();
-            writer.flush();
-
-            context.nextIndexToWrite().incrementAndGet();
+            context.orderedResults().remove(currentIndex);
+            currentIndex = context.nextIndexToWrite().incrementAndGet();
         }
+
+        // Single flush after writing multiple results for better performance
+        writer.flush();
     }
 
-    private ResultItem getNextAndRemoveFromQueue() {
-        return context.orderedResults().remove(context.nextIndexToWrite().get());
+    private int logPeriodically(int pollCount) {
+        if (++pollCount % LOG_INTERVAL == 0) {
+            System.out.printf("""
+                            Progress:
+                            Queue size=%d,
+                            Ordered results size=%d,
+                            Next index=%d%n""",
+                    context.resultQueue().size(), context.orderedResults().size(), context.nextIndexToWrite().get());
+        }
+        return pollCount;
     }
 }

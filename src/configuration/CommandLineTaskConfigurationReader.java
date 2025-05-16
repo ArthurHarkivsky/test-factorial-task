@@ -1,4 +1,3 @@
-
 package configuration;
 
 import configuration.dto.TaskConfiguration;

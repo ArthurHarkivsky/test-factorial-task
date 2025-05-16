@@ -5,13 +5,15 @@ import task.FactorialCalculationTask;
 import task.ReaderTask;
 import task.WriterTask;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.util.concurrent.CompletableFuture.runAsync;
 
 public class FactorialFileCalculator {
 
@@ -28,14 +30,11 @@ public class FactorialFileCalculator {
                     new ConcurrentHashMap<>(),
                     pool);
 
-            pool.submit(new ReaderTask(context)).get();
-            pool.submit(new FactorialCalculationTask(context)).get();
-            pool.submit(new WriterTask(context)).get();
-        } catch (InterruptedException e) {
-            System.err.println("Main thread interrupted: " + e.getMessage());
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
+            CompletableFuture.allOf(new CompletableFuture[]{
+                    runAsync(new ReaderTask(context), pool),
+                    runAsync(new FactorialCalculationTask(context), pool),
+                    runAsync(new WriterTask(context), pool)}).join();
+
         }
         System.out.println("Factorial calculation completed");
     }

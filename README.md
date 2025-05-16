@@ -22,13 +22,27 @@ Enter the number of calculation threads (N): 48 // default is 1
 Enter the input file path: // skipping to use default "input.txt"
 Enter the output file path: output.txt
 ```
+TODO after the demo
+1. **Error Handling**: Implement more robust error handling with proper logging
+    - Add a dedicated logger rather than using System.out.println
+    - Implement retry logic for transient errors
 
-End of log example
-```aiignore
-Result queue size: 3
-Result queue size: 2
-Result queue size: 1
-Result queue size: 0
-All results written to output.txt
-Factorial calculation completed
-```
+2. **Progress Reporting**: Add a progress bar or percentage completion indicator
+    - Calculate and display the percentage of completed tasks
+
+3. **Configuration Enhancements**:
+    - Add the ability to read configuration from a properties file
+    - Implement command-line arguments for easier scripting
+
+4. **Performance Optimizations**:
+    - Implement batched writing for better I/O performance
+    - Add buffer size configuration for file I/O operations
+    - Implement work stealing for better thread utilization
+
+5. **Memory Management**:
+    - Add a maximum in-memory queue size to prevent out-of-memory errors
+    - Implement disk-based spooling for huge result sets
+
+6. **Testing & Monitoring**:
+    - Add a metrics collection for performance monitoring
+    - Implement unit and integration tests

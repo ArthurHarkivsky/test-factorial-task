@@ -3,35 +3,43 @@ package task;
 import dto.CalculationContext;
 import dto.InputItem;
 import dto.ResultItem;
+import math.CachedMath;
 
 import java.math.BigInteger;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 public class FactorialCalculationTask implements Runnable {
+    private static final int POLL_TIMEOUT_MS = 50;
+    private static final int MAX_CONCURRENT_CALCULATIONS = 100;
     private final CalculationContext context;
 
-    public FactorialCalculationTask(CalculationContext context) {this.context = context;}
+    public FactorialCalculationTask(CalculationContext context) {
+        this.context = context;
+    }
 
     @Override
     public void run() {
         try {
-            Semaphore rateLimiter = new Semaphore(100); // Limit to 100 calculations per second
+            Semaphore rateLimiter = new Semaphore(MAX_CONCURRENT_CALCULATIONS);
+            AtomicInteger activeCalculations = new AtomicInteger(0);
 
             while (!areTasksCompleted()) {
-                InputItem task = context.taskQueue().poll(100, TimeUnit.MILLISECONDS);
+                InputItem task = context.taskQueue().poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 if (task != null) {
                     rateLimiter.acquire();
+                    activeCalculations.incrementAndGet();
 
                     //noinspection resource
                     context.pool().submit(() -> {
                         try {
-                            BigInteger result = calculateFactorial(task.number());
-
+                            BigInteger result = CachedMath.calculateFactorial(task.number());
                             context.resultQueue().put(new ResultItem(task.index(), task.number(), result));
                             context.taskCount().decrementAndGet();
-
-                            // Wait 1 second to maintain the rate limit
+                            activeCalculations.decrementAndGet();
+                            // To maintain the rate limit
 //                            Thread.sleep(1000);
                             rateLimiter.release();
                         } catch (InterruptedException e) {
@@ -39,7 +47,11 @@ public class FactorialCalculationTask implements Runnable {
                         }
                     });
                 }
+
+                logProgressPeriodically(activeCalculations);
             }
+
+            waitForStragglersToComplete(activeCalculations);
 
             context.taskComplete().countDown();
             System.out.println("All calculations completed");
@@ -50,19 +62,25 @@ public class FactorialCalculationTask implements Runnable {
         }
     }
 
+    private void waitForStragglersToComplete(AtomicInteger activeCalculations) throws InterruptedException {
+        while (activeCalculations.get() > 0) {
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(POLL_TIMEOUT_MS));
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
+            }
+        }
+    }
+
     private boolean areTasksCompleted() {
         return context.taskQueue().isEmpty() && context.taskCount().get() == 0;
     }
 
-    private BigInteger calculateFactorial(int number) {
-        if (number < 0) {
-            throw new IllegalArgumentException("Factorial is not defined for negative numbers");
+    private void logProgressPeriodically(AtomicInteger activeCalculations) {
+        if (context.taskCount().get() % 1000 == 0 && context.taskCount().get() > 0) {
+            System.out.printf("""
+                    Calculation progress
+                    Remaining tasks: %d
+                    Active calculations: %d""", context.taskCount().get(), activeCalculations.get());
         }
-
-        BigInteger result = BigInteger.ONE;
-        for (int i = 2; i <= number; i++) {
-            result = result.multiply(BigInteger.valueOf(i));
-        }
-        return result;
     }
 }
